@@ -11,11 +11,7 @@ const allowedOrigins = (
   .split(",")
   .map((origin) => origin.trim());
 
-app.use(
-  cors({
-    origin: allowedOrigins,
-  })
-);
+app.use(cors({ origin: allowedOrigins }));
 
 const httpServer = createServer(app);
 
@@ -26,87 +22,132 @@ const io = new Server(httpServer, {
   },
 });
 
+const MAX_USERS = 4;
+
 io.on("connection", (socket) => {
   console.log("Connected:", socket.id);
 
-  socket.on("join-room", (roomId: string) => {
+  socket.on("join-room", (payload) => {
+    const roomId = payload?.roomId;
+    const name = payload?.name;
+    const createRoom = payload?.createRoom === true;
+
     if (typeof roomId !== "string" || !roomId.trim()) {
       socket.emit("room-error", "Invalid room ID");
       return;
     }
 
-    // Prevent joining multiple rooms with the same socket
-    if (socket.data.roomId) {
-      socket.emit("room-error", "Already in a room");
+    if (socket.data.roomId) return;
+
+    const normalizedRoomId = roomId.trim();
+    const room = io.sockets.adapter.rooms.get(normalizedRoomId);
+    const participants = room?.size ?? 0;
+
+    if (!room && !createRoom) {
+      socket.emit("room-error", "Room not found. Check the room ID and try again.");
       return;
     }
 
-    const room = io.sockets.adapter.rooms.get(roomId);
-    const participants = room?.size ?? 0;
-
-    // Allow only two participants
-    if (participants >= 2) {
+    if (participants >= MAX_USERS) {
       socket.emit("room-full");
       return;
     }
 
-    socket.join(roomId);
-    socket.data.roomId = roomId;
+    const existingUsers = room
+      ? [...room].map((id) => {
+          const participant = io.sockets.sockets.get(id);
 
-    socket.emit("room-users", participants);
+          return {
+            id,
+            name: participant?.data.name ?? "Guest",
+            micOn: participant?.data.micOn ?? true,
+            cameraOn: participant?.data.cameraOn ?? true,
+          };
+        })
+      : [];
 
-    socket.to(roomId).emit("user-joined", socket.id);
+    const participantName =
+      typeof name === "string" && name.trim()
+        ? name.trim()
+        : `Participant ${participants + 1}`;
 
-    console.log(`${socket.id} joined room ${roomId}`);
+    socket.data.roomId = normalizedRoomId;
+    socket.data.name = participantName;
+    socket.data.micOn = true;
+    socket.data.cameraOn = true;
+
+    socket.join(normalizedRoomId);
+
+    socket.emit("room-users", existingUsers);
+
+    socket.to(normalizedRoomId).emit("user-joined", {
+      id: socket.id,
+      name: participantName,
+      micOn: true,
+      cameraOn: true,
+    });
   });
 
-  // WebRTC offer
-  socket.on("offer", ({ roomId, offer }) => {
-    if (socket.data.roomId !== roomId) return;
+  socket.on("participant-update", ({ micOn, cameraOn }) => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
 
-    socket.to(roomId).emit("offer", offer);
+    if (typeof micOn === "boolean") socket.data.micOn = micOn;
+    if (typeof cameraOn === "boolean") socket.data.cameraOn = cameraOn;
+
+    socket.to(roomId).emit("participant-update", {
+      id: socket.id,
+      micOn: socket.data.micOn,
+      cameraOn: socket.data.cameraOn,
+    });
   });
 
-  // WebRTC answer
-  socket.on("answer", ({ roomId, answer }) => {
-    if (socket.data.roomId !== roomId) return;
-
-    socket.to(roomId).emit("answer", answer);
+  // Send signaling messages to a specific peer
+  socket.on("offer", ({ to, offer }) => {
+    io.to(to).emit("offer", {
+      from: socket.id,
+      offer,
+    });
   });
 
-  // ICE candidates
-  socket.on("ice-candidate", ({ roomId, candidate }) => {
-    if (socket.data.roomId !== roomId) return;
-
-    socket.to(roomId).emit("ice-candidate", candidate);
+  socket.on("answer", ({ to, answer }) => {
+    io.to(to).emit("answer", {
+      from: socket.id,
+      answer,
+    });
   });
 
-  // Leave room
-  socket.on("leave-room", (roomId: string) => {
-    if (socket.data.roomId !== roomId) return;
+  socket.on("ice-candidate", ({ to, candidate }) => {
+    io.to(to).emit("ice-candidate", {
+      from: socket.id,
+      candidate,
+    });
+  });
 
-    socket.to(roomId).emit("user-left");
+  socket.on("leave-room", () => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
 
+    socket.to(roomId).emit("user-left", socket.id);
     socket.leave(roomId);
+
     delete socket.data.roomId;
 
-    console.log(`${socket.id} left room ${roomId}`);
+    console.log(`${socket.id} left ${roomId}`);
   });
 
-  // Handle disconnection
   socket.on("disconnect", () => {
     const roomId = socket.data.roomId;
 
     if (roomId) {
-      socket.to(roomId).emit("user-left");
-      console.log(`${socket.id} disconnected from ${roomId}`);
+      socket.to(roomId).emit("user-left", socket.id);
+      delete socket.data.roomId;
     }
 
     console.log("Disconnected:", socket.id);
   });
 });
 
-// Render deployment configuration
 const PORT = Number(process.env.PORT) || 3000;
 
 httpServer.listen(PORT, "0.0.0.0", () => {

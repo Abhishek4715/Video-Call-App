@@ -2,6 +2,22 @@
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
+## WebRTC TURN configuration
+
+The client uses Google's public STUN server by default. To enable TURN relay
+candidates for peers behind restrictive NATs or firewalls, set these variables
+in the client environment and rebuild/redeploy:
+
+- `VITE_TURN_URLS`: comma-separated TURN/TURNS URIs from your TURN provider.
+- `VITE_TURN_USERNAME`: TURN username.
+- `VITE_TURN_CREDENTIAL`: TURN credential/password.
+
+See `.env.example` for the expected format. TURN credentials are included in
+the browser bundle because WebRTC clients must authenticate directly with the
+TURN server. Use provider-issued short-lived credentials for production; do
+not put long-lived account secrets in `VITE_` variables. If TURN URLs are set
+without both credentials, the call reports a configuration error.
+
 Currently, two official plugins are available:
 
 - [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)

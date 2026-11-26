@@ -6,6 +6,8 @@ type VideoTileProps = {
   stream: MediaStream | null;
   cameraOn?: boolean;
   micOn?: boolean;
+  isLocal?: boolean;
+  className?: string;
 };
 
 function VideoTile({
@@ -13,6 +15,8 @@ function VideoTile({
   stream,
   cameraOn = true,
   micOn = true,
+  isLocal = false,
+  className = "",
 }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -34,14 +38,14 @@ function VideoTile({
   }, [stream, cameraOn]);
 
   return (
-    <div className="relative rounded-2xl bg-[#18181b] border border-white/5 overflow-hidden flex items-center justify-center min-h-75">
+    <div className={`relative rounded-2xl bg-[#18181b] border border-white/5 overflow-hidden flex items-center justify-center min-h-75 ${className}`}>
 
       {/* Keep the video element mounted */}
       <video
         ref={videoRef}
         autoPlay
         playsInline
-        muted={name === "You"}
+        muted={isLocal}
         className={`absolute inset-0 w-full h-full object-cover ${
           cameraOn && stream ? "visible" : "invisible"
         }`}
