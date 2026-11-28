@@ -9,9 +9,14 @@ const allowedOrigins = (
   process.env.CLIENT_URL || "http://localhost:5173"
 )
   .split(",")
-  .map((origin) => origin.trim());
+  .map((origin) => origin.trim().replace(/\/+$/, ""));
 
-app.use(cors({ origin: allowedOrigins }));
+app.use(
+  cors({
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+  })
+);
 
 const httpServer = createServer(app);
 
@@ -21,6 +26,8 @@ const io = new Server(httpServer, {
     methods: ["GET", "POST"],
   },
 });
+
+console.log("Allowed origins:", allowedOrigins);
 
 const MAX_USERS = 4;
 
